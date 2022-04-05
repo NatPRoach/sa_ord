@@ -1,0 +1,23 @@
+[package]
+authors = ["Nathan Roach <natproach@gmail.com>"]
+edition = "2021"
+name = "sa-ord"
+publish = false
+readme = "README.md"
+version = "0.0.1"
+
+[lib]
+name = "sa_ord"
+path = "src/sa_ord/mod.rs"
+
+[build-dependencies]
+built = {version = "0.5", features=["git2"]}
+
+[dependencies]
+anyhow = "1.0.38"
+bitvec = "1.0.0"
+thiserror = "1.0.23"
+rust-htslib = "0.38.2"
+indexmap = "1.7.0"
+itertools = "0.10.1"
+pathfinding = "2.2.2"
