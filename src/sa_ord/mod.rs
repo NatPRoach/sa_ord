@@ -1,6 +1,5 @@
-// This module is a pure (attempted idiomatic) Rust implementation of the SA-IS suffix tree
-// algorithm for slices of Ord + Clone + Hash + Debug types
-
+/// This module is a pure (attempted idiomatic) Rust implementation of the SA-IS suffix tree
+/// algorithm for slices of Ord + Clone + Hash + Debug types
 pub mod errors;
 
 use bitvec::vec::BitVec;
@@ -63,7 +62,7 @@ impl SuffixTypes {
 /// An object that allows for sorting of suffix types based on L or S substring properties for the
 /// purposes of ordering 'bins' of the suffix array as described in the SA-IS implementation paper.
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub enum SortableSuffixType<S: Ord + Clone + Hash + Debug> {
+enum SortableSuffixType<S: Ord + Clone + Hash + Debug> {
     /// 'Smaller' type, indicating that the suffix is smaller than the suffix to its right
     SType(S),
     /// 'Larger' type, indicating that the suffix is larger than the suffix to its right
@@ -287,6 +286,8 @@ fn suffix_array_modification_propagation<S: Ord + Clone + Hash + Debug>(
 ///
 /// Will return `Error::TryFromIntError` if there are more LMS substrings than there are positive
 /// numbers in isize (if so you likely have bigger problems).
+/// May also Error if the last character of the text is not a sentinel character (i.e. the
+/// unambiguous smallest character in the text).
 pub fn sais<S: Ord + Clone + Hash + Debug>(text: &[S]) -> Result<Vec<usize>> {
     let mut sa: Vec<isize> = vec![-1; text.len()];
     // Step 1 - Classify all suffixes in the text with SType + LeftmostSType / LType label
