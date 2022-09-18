@@ -4,6 +4,12 @@ edition = "2021"
 name = "sa-ord"
 publish = false
 readme = "README.md"
+license-file = "LICENSE.md"
+description = "Pure rust implementation of the Suffix Array by Induced Sorting algorithm."
+homepage = "https://github.com/NatPRoach/sa_ord"
+repository = "https://github.com/NatPRoach/sa_ord"
+keywords = ["sa_ord", "suffx-array", "suffix", "array", "induced sorting"]
+categories = ["algorithms", "science", "text-processing"]
 version = "0.0.1"
 
 [lib]
