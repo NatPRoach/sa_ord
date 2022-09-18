@@ -8,7 +8,7 @@ license-file = "LICENSE.md"
 description = "Pure Rust implementation of the Suffix Array by Induced Sorting algorithm."
 homepage = "https://github.com/NatPRoach/sa_ord"
 repository = "https://github.com/NatPRoach/sa_ord"
-keywords = ["bioinformatics", "sa_ord", "suffix-array", "suffix", "array", "induced sorting"]
+keywords = ["bioinformatics", "sa_ord", "suffix-array", "suffix", "array", "induced", "sorting"]
 categories = ["algorithms", "science", "text-processing"]
 version = "0.0.1"
 
