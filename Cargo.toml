@@ -2,10 +2,10 @@
 authors = ["Nathan Roach <natproach@gmail.com>"]
 edition = "2021"
 name = "sa-ord"
-publish = false
+publish = true
 readme = "README.md"
 license-file = "LICENSE.md"
-description = "Pure rust implementation of the Suffix Array by Induced Sorting algorithm."
+description = "Pure Rust implementation of the Suffix Array by Induced Sorting algorithm."
 homepage = "https://github.com/NatPRoach/sa_ord"
 repository = "https://github.com/NatPRoach/sa_ord"
 keywords = ["sa_ord", "suffx-array", "suffix", "array", "induced sorting"]
