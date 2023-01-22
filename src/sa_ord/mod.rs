@@ -1,6 +1,7 @@
 /// This module is a pure (attempted idiomatic) Rust implementation of the SA-IS suffix tree
 /// algorithm for slices of Ord + Clone + Hash + Debug types
 pub mod errors;
+pub mod merge_bwt;
 
 use bitvec::vec::BitVec;
 use core::hash::Hash;
