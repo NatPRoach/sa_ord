@@ -266,31 +266,32 @@ fn reduce_lms_substrings<S: Ord + Clone + Hash + Debug>(
         .map(|i| usize::try_from(*i).map_err(|e| Error::TryFromIntError { e }))
         .collect::<Result<Vec<usize>>>()?;
 
-    let substring_start_to_ends: HashMap<usize, usize> = w_slice_indices.iter().copied().collect();
+    // Both indexed by text position: the end of the LMS substring starting there, and its name.
+    let mut substring_ends: Vec<Option<usize>> = vec![None; text.len()];
+    for &(start, end) in w_slice_indices {
+        substring_ends[start] = Some(end);
+    }
     let mut unique_substring_counter = 0;
-    let mut reduced_substring_mapping: HashMap<usize, usize> =
-        HashMap::with_capacity(w_slice_indices.len());
+    let mut reduced_substring_mapping: Vec<Option<usize>> = vec![None; text.len()];
 
     let mut previous_substring: Option<&[S]> = None;
     for text_index in &validated_sa {
         if stypes.is_leftmost_stype(*text_index) {
-            let substring_end = substring_start_to_ends
-                .get(text_index)
+            let substring_end = substring_ends[*text_index]
                 .ok_or(Error::LmsIndexError { beginning: *text_index })?;
-            let current_substring = &text[*text_index..*substring_end];
+            let current_substring = &text[*text_index..substring_end];
             if previous_substring.is_some() && previous_substring != Some(current_substring) {
                 unique_substring_counter += 1;
             }
             previous_substring = Some(current_substring);
-            reduced_substring_mapping.insert(*text_index, unique_substring_counter);
+            reduced_substring_mapping[*text_index] = Some(unique_substring_counter);
         }
     }
     let reduced_substring = w_slice_indices
         .iter()
         .map(|(lms_substring_start, _)| {
-            Ok(*reduced_substring_mapping
-                .get(lms_substring_start)
-                .ok_or(Error::LmsReductionError { text_index: *lms_substring_start })?)
+            reduced_substring_mapping[*lms_substring_start]
+                .ok_or(Error::LmsReductionError { text_index: *lms_substring_start })
         })
         .collect::<Result<Vec<usize>>>()?;
 
