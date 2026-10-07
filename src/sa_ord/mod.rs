@@ -172,11 +172,11 @@ fn get_reduced_substring<S: Ord + Clone + Hash + Debug>(
     }
     let mut bin_edges = get_bin_offsets(bin_sizes, false);
     for (start_idx, _) in w_slice_indices {
-        let x = bin_edges.get_mut(&SortableSuffixType::SType(text[*start_idx].clone())).ok_or(
-            Error::ValueNotInBinEdges {
+        let x = bin_edges
+            .get_mut(&SortableSuffixType::SType(text[*start_idx].clone()))
+            .ok_or_else(|| Error::ValueNotInBinEdges {
                 val: format!("{:?}", SortableSuffixType::SType(text[*start_idx].clone())),
-            },
-        )?;
+            })?;
 
         sort_sa[*x] = isize::try_from(*start_idx).map_err(|e| Error::TryFromIntError { e })?;
         if *x > 0 {
@@ -313,11 +313,11 @@ pub fn sais<S: Ord + Clone + Hash + Debug>(text: &[S]) -> Result<Vec<usize>> {
     for reduced_string_index in reduced_suffix_array.iter().rev() {
         let w_slice_start = w_slice_indices[*reduced_string_index].0;
         let s_char = text[w_slice_start].clone();
-        let x = bin_edges.get_mut(&SortableSuffixType::SType(s_char)).ok_or(
+        let x = bin_edges.get_mut(&SortableSuffixType::SType(s_char)).ok_or_else(|| {
             Error::ValueNotInBinEdges {
                 val: format!("{:?}", SortableSuffixType::SType(text[w_slice_start].clone())),
-            },
-        )?;
+            }
+        })?;
 
         sa[*x] = isize::try_from(w_slice_start).map_err(|e| Error::TryFromIntError { e })?;
         if *x > 0 {
