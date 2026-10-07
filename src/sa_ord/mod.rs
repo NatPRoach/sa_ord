@@ -63,7 +63,8 @@ impl SuffixTypes {
 
 /// An object that allows for sorting of suffix types based on L or S substring properties for the
 /// purposes of ordering 'bins' of the suffix array as described in the SA-IS implementation paper.
-/// `Bins` encodes the same ordering as plain indices; this type is kept as its test reference.
+/// `Bins` encodes the same ordering as plain indices; this type is kept as its test reference
+/// (see `test_bins_match_sortable_suffix_type_offsets`).
 #[cfg(test)]
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 enum SortableSuffixType<S: Ord + Clone + Hash + Debug> {
@@ -207,6 +208,8 @@ impl Bins {
 
     /// Builds the bins of a text that is already given as character ranks in
     /// `0..alphabet_size`, such as a reduced string, without hashing.
+    ///
+    /// Panics if any rank is not below `alphabet_size`.
     fn from_ranks(
         ranks: Vec<usize>,
         alphabet_size: usize,
@@ -242,6 +245,8 @@ impl Bins {
 
 /// Reduces the provided text into a reduced substring in which LMS substrings are represented by
 /// their indexing in the ordering of the LMS substrings.
+///
+/// Legacy test signature: `_bin_sizes` is ignored; the bins are recomputed from `text`.
 #[cfg(test)]
 fn get_reduced_substring<S: Ord + Clone + Hash + Debug>(
     text: &[S],
@@ -318,6 +323,8 @@ fn reduce_lms_substrings<S: Ord + Clone + Hash + Debug>(
 /// # Errors
 /// Can theoretically return an Err if something goes wrong with the internals of this crate, but
 /// never should
+///
+/// Legacy test signature: `_bin_sizes` is ignored; the bins are recomputed from `text`.
 #[cfg(test)]
 fn suffix_array_modification_propagation<S: Ord + Clone + Hash + Debug>(
     sa: &mut [isize],
@@ -601,5 +608,56 @@ mod tests {
     fn wholly_repetitive_completes() {
         let homopolymer = [1_u32, 1, 1, 1, 1, 1, 1, 0];
         assert_eq!(sais(&homopolymer).unwrap(), [7_usize, 6, 5, 4, 3, 2, 1, 0].to_vec());
+    }
+
+    /// Asserts that every position's bin in `Bins` has the same head and tail offsets as the
+    /// legacy `SortableSuffixType` keyed maps.
+    fn assert_bins_match_legacy<S: Ord + Clone + Hash + Debug>(text: &[S]) {
+        let suffix_types = SuffixTypes::new(text);
+        let bins = Bins::new(text, &suffix_types);
+        let sizes = count_text_bin_sizes(text, &suffix_types);
+        let forward_offsets = get_bin_offsets(&sizes, true);
+        let reverse_offsets = get_bin_offsets(&sizes, false);
+        let heads = bins.heads();
+        let tails = bins.tails();
+        assert_eq!(bins.position_bins.len(), text.len());
+        for (p, character) in text.iter().enumerate() {
+            let key = if suffix_types.is_stype(p) {
+                SortableSuffixType::SType(character.clone())
+            } else {
+                SortableSuffixType::LType(character.clone())
+            };
+            let bin = bins.position_bins[p];
+            assert_eq!(heads[bin], forward_offsets[&key], "Head mismatch at position {}", p);
+            assert_eq!(tails[bin], reverse_offsets[&key], "Tail mismatch at position {}", p);
+        }
+    }
+
+    #[test]
+    fn test_bins_match_sortable_suffix_type_offsets() {
+        assert_bins_match_legacy("mmiissiissiippii$".as_bytes());
+
+        // Deterministic pseudo-random sparse u32 text with a unique smallest terminator 0
+        let mut state: u32 = 12345;
+        let mut text: Vec<u32> = (0..400)
+            .map(|_| {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                ((state >> 16) % 37 + 1) * 1000
+            })
+            .collect();
+        text.push(0);
+        assert_bins_match_legacy(&text);
+
+        // Bins built from dense ranks equal Bins built from the text itself
+        let dense_texts: [Vec<usize>; 2] =
+            [vec![2, 2, 1, 0], vec![3, 1, 2, 2, 1, 3, 1, 2, 3, 1, 0]];
+        for dense in dense_texts {
+            let suffix_types = SuffixTypes::new(&dense);
+            let expected = Bins::new(&dense, &suffix_types);
+            let alphabet_size = dense.iter().max().unwrap() + 1;
+            let from_ranks = Bins::from_ranks(dense.clone(), alphabet_size, &suffix_types);
+            assert_eq!(from_ranks.position_bins, expected.position_bins);
+            assert_eq!(from_ranks.ends, expected.ends);
+        }
     }
 }
