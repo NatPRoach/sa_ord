@@ -5,7 +5,9 @@ pub mod errors;
 use bitvec::vec::BitVec;
 use core::hash::Hash;
 use errors::{Error, Result};
+#[cfg(test)]
 use itertools::Itertools;
+#[cfg(test)]
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -61,6 +63,8 @@ impl SuffixTypes {
 
 /// An object that allows for sorting of suffix types based on L or S substring properties for the
 /// purposes of ordering 'bins' of the suffix array as described in the SA-IS implementation paper.
+/// `Bins` encodes the same ordering as plain indices; this type is kept as its test reference.
+#[cfg(test)]
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 enum SortableSuffixType<S: Ord + Clone + Hash + Debug> {
     /// 'Smaller' type, indicating that the suffix is smaller than the suffix to its right
@@ -69,12 +73,14 @@ enum SortableSuffixType<S: Ord + Clone + Hash + Debug> {
     LType(S),
 }
 
+#[cfg(test)]
 impl<S: Ord + Clone + Hash + Debug> PartialOrd for SortableSuffixType<S> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
+#[cfg(test)]
 impl<S: Ord + Clone + Hash + Debug> Ord for SortableSuffixType<S> {
     fn cmp(&self, other: &Self) -> Ordering {
         match (self, other) {
@@ -114,6 +120,7 @@ fn find_lms_substring_indices(suffix_classifications: &SuffixTypes) -> Vec<(usiz
 }
 
 /// Counts the number of characters of each value and type (L or S).
+#[cfg(test)]
 fn count_text_bin_sizes<S: Ord + Clone + Hash + Debug>(
     text: &[S],
     suffix_classifications: &SuffixTypes,
@@ -135,6 +142,7 @@ fn count_text_bin_sizes<S: Ord + Clone + Hash + Debug>(
 }
 
 /// Derives the bin offsets for the suffix array given the list of bin sizes.
+#[cfg(test)]
 fn get_bin_offsets<S: Ord + Clone + Hash + Debug>(
     bin_sizes: &HashMap<SortableSuffixType<S>, usize>,
     forward_edge: bool,
@@ -158,25 +166,91 @@ fn get_bin_offsets<S: Ord + Clone + Hash + Debug>(
     bin_offsets
 }
 
+/// The suffix array bins ("buckets") of a text, laid out as plain vectors so the induction passes
+/// never hash or clone characters.
+///
+/// Bins are numbered in suffix array order: the bin of a position is `2 * rank + is_stype`, where
+/// `rank` is the rank of its character among the distinct characters of the text. This puts the
+/// L-type bin of each character directly before its S-type bin, matching the ordering of
+/// `SortableSuffixType`.
+#[derive(Debug)]
+struct Bins {
+    /// Bin of each text position
+    position_bins: Vec<usize>,
+    /// Exclusive end offset of each bin in the suffix array
+    ends: Vec<usize>,
+}
+
+impl Bins {
+    /// Assigns every position of the text to its bin and counts the bin sizes.
+    fn new<S: Ord + Hash>(text: &[S], suffix_classifications: &SuffixTypes) -> Self {
+        // Number the distinct characters in order of first appearance, then rank them.
+        let mut first_seen: HashMap<&S, usize> = HashMap::new();
+        let mut position_bins: Vec<usize> = text
+            .iter()
+            .map(|character| {
+                let next_id = first_seen.len();
+                *first_seen.entry(character).or_insert(next_id)
+            })
+            .collect();
+        let mut distinct: Vec<(&S, usize)> = first_seen.into_iter().collect();
+        distinct.sort_unstable_by_key(|(character, _)| *character);
+        let mut rank_of_id = vec![0; distinct.len()];
+        for (rank, (_, id)) in distinct.iter().enumerate() {
+            rank_of_id[*id] = rank;
+        }
+
+        let mut ends = vec![0; 2 * distinct.len()];
+        for (index, bin) in position_bins.iter_mut().enumerate() {
+            *bin = 2 * rank_of_id[*bin] + usize::from(suffix_classifications.is_stype(index));
+            ends[*bin] += 1;
+        }
+        let mut running_counter = 0;
+        for end in &mut ends {
+            running_counter += *end;
+            *end = running_counter;
+        }
+        Bins { position_bins, ends }
+    }
+
+    /// Offset of the first slot of every bin.
+    fn heads(&self) -> Vec<usize> {
+        let mut heads = Vec::with_capacity(self.ends.len());
+        heads.push(0);
+        heads.extend_from_slice(&self.ends[..self.ends.len() - 1]);
+        heads
+    }
+
+    /// Offset of the last slot of every bin (empty bins are never written to).
+    fn tails(&self) -> Vec<usize> {
+        self.ends.iter().map(|end| end.saturating_sub(1)).collect()
+    }
+}
+
 /// Reduces the provided text into a reduced substring in which LMS substrings are represented by
 /// their indexing in the ordering of the LMS substrings.
+#[cfg(test)]
 fn get_reduced_substring<S: Ord + Clone + Hash + Debug>(
     text: &[S],
     w_slice_indices: &[(usize, usize)],
     stypes: &SuffixTypes,
-    bin_sizes: &HashMap<SortableSuffixType<S>, usize>,
+    _bin_sizes: &HashMap<SortableSuffixType<S>, usize>,
 ) -> Result<(bool, Vec<usize>)> {
-    let mut sort_sa = Vec::with_capacity(text.len());
-    for _ in 0..text.len() {
-        sort_sa.push(-1);
-    }
-    let mut bin_edges = get_bin_offsets(bin_sizes, false);
+    reduce_lms_substrings(text, w_slice_indices, stypes, &Bins::new(text, stypes))
+}
+
+/// Reduces the provided text into a reduced substring in which LMS substrings are represented by
+/// their indexing in the ordering of the LMS substrings.
+fn reduce_lms_substrings<S: Ord + Clone + Hash + Debug>(
+    text: &[S],
+    w_slice_indices: &[(usize, usize)],
+    stypes: &SuffixTypes,
+    bins: &Bins,
+) -> Result<(bool, Vec<usize>)> {
+    let mut sort_sa = vec![-1; text.len()];
+    let mut bin_edges = bins.tails();
     for (start_idx, _) in w_slice_indices {
-        let x = bin_edges
-            .get_mut(&SortableSuffixType::SType(text[*start_idx].clone()))
-            .ok_or_else(|| Error::ValueNotInBinEdges {
-                val: format!("{:?}", SortableSuffixType::SType(text[*start_idx].clone())),
-            })?;
+        let x = &mut bin_edges[bins.position_bins[*start_idx]];
 
         sort_sa[*x] = isize::try_from(*start_idx).map_err(|e| Error::TryFromIntError { e })?;
         if *x > 0 {
@@ -184,8 +258,8 @@ fn get_reduced_substring<S: Ord + Clone + Hash + Debug>(
         }
     }
 
-    suffix_array_modification_propagation(&mut sort_sa, text, stypes, bin_sizes, true)?;
-    suffix_array_modification_propagation(&mut sort_sa, text, stypes, bin_sizes, false)?;
+    induce_pass(&mut sort_sa, stypes, bins, true)?;
+    induce_pass(&mut sort_sa, stypes, bins, false)?;
 
     let validated_sa = sort_sa
         .iter()
@@ -230,14 +304,30 @@ fn get_reduced_substring<S: Ord + Clone + Hash + Debug>(
 /// # Errors
 /// Can theoretically return an Err if something goes wrong with the internals of this crate, but
 /// never should
+#[cfg(test)]
 fn suffix_array_modification_propagation<S: Ord + Clone + Hash + Debug>(
     sa: &mut [isize],
     text: &[S],
     stypes: &SuffixTypes,
-    bin_sizes: &HashMap<SortableSuffixType<S>, usize>,
+    _bin_sizes: &HashMap<SortableSuffixType<S>, usize>,
     forward_pass: bool,
 ) -> Result<()> {
-    let mut bin_edges = get_bin_offsets(bin_sizes, forward_pass);
+    induce_pass(sa, stypes, &Bins::new(text, stypes), forward_pass)
+}
+
+/// Modifies the provided suffix array by doing either a forward (L-type) or reverse (S-type)
+/// induction pass, using the precomputed bins of the text.
+///
+/// # Errors
+/// Can theoretically return an Err if something goes wrong with the internals of this crate, but
+/// never should
+fn induce_pass(
+    sa: &mut [isize],
+    stypes: &SuffixTypes,
+    bins: &Bins,
+    forward_pass: bool,
+) -> Result<()> {
+    let mut bin_edges = if forward_pass { bins.heads() } else { bins.tails() };
 
     let iter_order: Box<dyn Iterator<Item = usize>> =
         if forward_pass { Box::new(0..sa.len()) } else { Box::new((0..sa.len()).rev()) };
@@ -251,24 +341,11 @@ fn suffix_array_modification_propagation<S: Ord + Clone + Hash + Debug>(
         } else {
             val -= 1;
         };
-        let sortable_suffix_type = if forward_pass {
-            SortableSuffixType::LType(
-                text[usize::try_from(val).map_err(|e| Error::TryFromIntError { e })?].clone(),
-            )
-        } else {
-            SortableSuffixType::SType(
-                text[usize::try_from(val).map_err(|e| Error::TryFromIntError { e })?].clone(),
-            )
-        };
-        let check_function_result = if forward_pass {
-            stypes.is_ltype(usize::try_from(val).map_err(|e| Error::TryFromIntError { e })?)
-        } else {
-            stypes.is_stype(usize::try_from(val).map_err(|e| Error::TryFromIntError { e })?)
-        };
+        let position = usize::try_from(val).map_err(|e| Error::TryFromIntError { e })?;
+        let check_function_result =
+            if forward_pass { stypes.is_ltype(position) } else { stypes.is_stype(position) };
         if check_function_result {
-            let edge = bin_edges.get_mut(&sortable_suffix_type).ok_or_else(|| {
-                Error::ValueNotInBinEdges { val: format!("{:?}", sortable_suffix_type) }
-            })?;
+            let edge = &mut bin_edges[bins.position_bins[position]];
             sa[*edge] = val;
             if forward_pass {
                 *edge += 1;
@@ -293,12 +370,12 @@ pub fn sais<S: Ord + Clone + Hash + Debug>(text: &[S]) -> Result<Vec<usize>> {
     // Step 1 - Classify all suffixes in the text with SType + LeftmostSType / LType label
     let stypes = SuffixTypes::new(text);
     // Step 2 - Divide the buckets into S- and L-Buckets on. TheL-Buckets in front of the S-Buckets.
-    let bin_sizes = count_text_bin_sizes(text, &stypes);
+    let bins = Bins::new(text, &stypes);
 
     // Sort the LeftmostSType strings lexicographically and write them in their respective S-Buckets.
     let w_slice_indices = find_lms_substring_indices(&stypes);
     let (duplicates, reduced_substring) =
-        get_reduced_substring(text, &w_slice_indices, &stypes, &bin_sizes)?;
+        reduce_lms_substrings(text, &w_slice_indices, &stypes, &bins)?;
 
     let mut reduced_suffix_array: Vec<usize>;
     if duplicates {
@@ -309,15 +386,10 @@ pub fn sais<S: Ord + Clone + Hash + Debug>(text: &[S]) -> Result<Vec<usize>> {
             reduced_suffix_array[sort_index] = original_index;
         }
     }
-    let mut bin_edges = get_bin_offsets(&bin_sizes, false);
+    let mut bin_edges = bins.tails();
     for reduced_string_index in reduced_suffix_array.iter().rev() {
         let w_slice_start = w_slice_indices[*reduced_string_index].0;
-        let s_char = text[w_slice_start].clone();
-        let x = bin_edges.get_mut(&SortableSuffixType::SType(s_char)).ok_or_else(|| {
-            Error::ValueNotInBinEdges {
-                val: format!("{:?}", SortableSuffixType::SType(text[w_slice_start].clone())),
-            }
-        })?;
+        let x = &mut bin_edges[bins.position_bins[w_slice_start]];
 
         sa[*x] = isize::try_from(w_slice_start).map_err(|e| Error::TryFromIntError { e })?;
         if *x > 0 {
@@ -325,8 +397,8 @@ pub fn sais<S: Ord + Clone + Hash + Debug>(text: &[S]) -> Result<Vec<usize>> {
         }
     }
 
-    suffix_array_modification_propagation(&mut sa, text, &stypes, &bin_sizes, true)?;
-    suffix_array_modification_propagation(&mut sa, text, &stypes, &bin_sizes, false)?;
+    induce_pass(&mut sa, &stypes, &bins, true)?;
+    induce_pass(&mut sa, &stypes, &bins, false)?;
 
     sa.iter()
         .map(|i| usize::try_from(*i).map_err(|e| Error::TryFromIntError { e }))
