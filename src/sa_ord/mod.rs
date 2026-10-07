@@ -199,10 +199,23 @@ impl Bins {
         for (rank, (_, id)) in distinct.iter().enumerate() {
             rank_of_id[*id] = rank;
         }
+        for id in &mut position_bins {
+            *id = rank_of_id[*id];
+        }
+        Self::from_ranks(position_bins, distinct.len(), suffix_classifications)
+    }
 
-        let mut ends = vec![0; 2 * distinct.len()];
+    /// Builds the bins of a text that is already given as character ranks in
+    /// `0..alphabet_size`, such as a reduced string, without hashing.
+    fn from_ranks(
+        ranks: Vec<usize>,
+        alphabet_size: usize,
+        suffix_classifications: &SuffixTypes,
+    ) -> Self {
+        let mut position_bins = ranks;
+        let mut ends = vec![0; 2 * alphabet_size];
         for (index, bin) in position_bins.iter_mut().enumerate() {
-            *bin = 2 * rank_of_id[*bin] + usize::from(suffix_classifications.is_stype(index));
+            *bin = 2 * *bin + usize::from(suffix_classifications.is_stype(index));
             ends[*bin] += 1;
         }
         let mut running_counter = 0;
@@ -367,20 +380,38 @@ fn induce_pass(
 /// May also Error if the last character of the text is not a sentinel character (i.e. the
 /// unambiguous smallest character in the text).
 pub fn sais<S: Ord + Clone + Hash + Debug>(text: &[S]) -> Result<Vec<usize>> {
-    let mut sa: Vec<isize> = vec![-1; text.len()];
     // Step 1 - Classify all suffixes in the text with SType + LeftmostSType / LType label
     let stypes = SuffixTypes::new(text);
     // Step 2 - Divide the buckets into S- and L-Buckets on. TheL-Buckets in front of the S-Buckets.
     let bins = Bins::new(text, &stypes);
+    induced_sort(text, &stypes, &bins)
+}
+
+/// Performs the remaining SA-IS steps for a text whose suffix types and bins are already known.
+///
+/// # Errors
+///
+/// Same as `sais`.
+fn induced_sort<S: Ord + Clone + Hash + Debug>(
+    text: &[S],
+    stypes: &SuffixTypes,
+    bins: &Bins,
+) -> Result<Vec<usize>> {
+    let mut sa: Vec<isize> = vec![-1; text.len()];
 
     // Sort the LeftmostSType strings lexicographically and write them in their respective S-Buckets.
-    let w_slice_indices = find_lms_substring_indices(&stypes);
+    let w_slice_indices = find_lms_substring_indices(stypes);
     let (duplicates, reduced_substring) =
-        reduce_lms_substrings(text, &w_slice_indices, &stypes, &bins)?;
+        reduce_lms_substrings(text, &w_slice_indices, stypes, bins)?;
 
     let mut reduced_suffix_array: Vec<usize>;
     if duplicates {
-        reduced_suffix_array = sais(&reduced_substring)?;
+        // The reduced string already consists of ranks, so its bins need no hashing.
+        let reduced_stypes = SuffixTypes::new(&reduced_substring);
+        let alphabet_size = reduced_substring.iter().max().map_or(0, |name| name + 1);
+        let reduced_bins =
+            Bins::from_ranks(reduced_substring.clone(), alphabet_size, &reduced_stypes);
+        reduced_suffix_array = induced_sort(&reduced_substring, &reduced_stypes, &reduced_bins)?;
     } else {
         reduced_suffix_array = vec![0; reduced_substring.len()];
         for (original_index, &sort_index) in reduced_substring.iter().enumerate() {
@@ -398,8 +429,8 @@ pub fn sais<S: Ord + Clone + Hash + Debug>(text: &[S]) -> Result<Vec<usize>> {
         }
     }
 
-    induce_pass(&mut sa, &stypes, &bins, true)?;
-    induce_pass(&mut sa, &stypes, &bins, false)?;
+    induce_pass(&mut sa, stypes, bins, true)?;
+    induce_pass(&mut sa, stypes, bins, false)?;
 
     sa.iter()
         .map(|i| usize::try_from(*i).map_err(|e| Error::TryFromIntError { e }))
