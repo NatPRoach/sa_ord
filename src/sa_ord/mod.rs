@@ -328,8 +328,7 @@ pub fn sais<S: Ord + Clone + Hash + Debug>(text: &[S]) -> Result<Vec<usize>> {
     suffix_array_modification_propagation(&mut sa, text, &stypes, &bin_sizes, true)?;
     suffix_array_modification_propagation(&mut sa, text, &stypes, &bin_sizes, false)?;
 
-    sa
-        .iter()
+    sa.iter()
         .map(|i| usize::try_from(*i).map_err(|e| Error::TryFromIntError { e }))
         .collect::<Result<Vec<usize>>>()
 }
