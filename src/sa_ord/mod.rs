@@ -231,7 +231,7 @@ fn get_reduced_substring<S: Ord + Clone + Hash + Debug>(
 /// Can theoretically return an Err if something goes wrong with the internals of this crate, but
 /// never should
 fn suffix_array_modification_propagation<S: Ord + Clone + Hash + Debug>(
-    sa: &mut Vec<isize>,
+    sa: &mut [isize],
     text: &[S],
     stypes: &SuffixTypes,
     bin_sizes: &HashMap<SortableSuffixType<S>, usize>,
@@ -328,10 +328,10 @@ pub fn sais<S: Ord + Clone + Hash + Debug>(text: &[S]) -> Result<Vec<usize>> {
     suffix_array_modification_propagation(&mut sa, text, &stypes, &bin_sizes, true)?;
     suffix_array_modification_propagation(&mut sa, text, &stypes, &bin_sizes, false)?;
 
-    return sa
+    sa
         .iter()
         .map(|i| usize::try_from(*i).map_err(|e| Error::TryFromIntError { e }))
-        .collect::<Result<Vec<usize>>>();
+        .collect::<Result<Vec<usize>>>()
 }
 
 #[cfg(test)]
